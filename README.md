@@ -1,0 +1,2 @@
+# gupdate
+Gentoo update script
