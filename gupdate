@@ -1,0 +1,92 @@
+#!/usr/bin/python3
+import os
+import sys
+import subprocess
+
+
+# settings
+flatpak = True
+portage = True
+liveRebuild = True
+quiet = False
+ask = False
+
+# get operations and flags
+flags = []
+supportedFlags = ["--noflatpak","--noportage","--noliverebuild","--quiet","--ask"]
+for a in sys.argv[1:]:
+    if str(a) == "--noflatpak":
+        flatpak = False
+        continue
+    if str(a) == "--noportage":
+        portage = False
+        continue
+    if str(a) == "--noliverebuild":
+        liveRebuild = False
+        continue
+    if str(a) == "--quiet":
+        quiet = True
+        continue
+    if str(a) == "--ask":
+        ask = True
+        continue
+    print(f"Flag '{str(a)}' unknown\n")
+    exit()
+# both quiet and ask cannot be enabled
+if quiet and ask:
+    print("Both --quiet and --ask cannot be enabled simultaneously\n")
+    exit()
+# do updates
+flatpakCommand = f"sudo -u $SUDO_USER flatpak update {'-y' if not ask else ''} {'>> /tmp/gupdate/flatpak.txt' if quiet else ''}"
+portageCommands = [f"emerge --sync{'>> /tmp/gupdate/portage.txt' if quiet else ''}",f"emerge --update --deep --newuse {'' if not ask else '--ask'} @world {'>> /tmp/gupdate/portage.txt' if quiet else ''}"]
+liveRebuildCommand = "smart-live-rebuild"
+
+# make tmpfolder
+if quiet:
+    if os.path.exists("/tmp/gupdate/"):
+        if os.path.isdir("/tmp/gupdate/"):
+            if os.listdir("/tmp/gupdate/") != []:
+                for a in os.listdir("/tmp/gupdate/"):
+                    os.remove(f"/tmp/gupdate/{a}")
+            os.rmdir("/tmp/gupdate/")
+        else:
+            os.remove("/tmp/gupdate")
+    os.mkdir("/tmp/gupdate")
+    logs = ['flatpak.txt',"portage.txt","smart-live-rebuild.txt"]
+    for a in logs:
+        with open(f"/tmp/gupdate/{a}", "w"):
+            pass
+    
+
+# do flatpak updates
+if flatpak:
+    print("Running Flatpak Updates\n")
+    rc = os.system(flatpakCommand)
+    if rc != 0:
+        # complicated one liner, exclusively for correct capitalization
+        print(f"""Errors occured during flatpak update{", run `less /tmp/gupdate/flatpak.txt` for more info" if quiet else ""}\n{f"Skipped {'Portage and' if portage else ''}{'Smart-live-rebuild' if not portage else '' }{'smart-live-rebuild' if portage and liveRebuild else ''}{chr(10)}" if liveRebuild or portage else ""}""")
+        exit()
+
+#do portage updates
+if portage:
+    print("running Portage Updates, this may take some time\n")
+    x = 1
+    for a in portageCommands:
+        rc = os.system(a)
+        if rc != 0:
+            print(f"Errors occured during portage update {'sync' if x == 1 else ''}{', run `less /tmp/gupdate/portage.txt` for more info' if quiet else ''}\n{f'Skipped Smart-live-rebuild{chr(10)}' if liveRebuild else ''}")
+            exit()
+        x+=1
+
+
+# do Smart Live Rebuild
+if liveRebuild:
+    print(f"Running smart-live-rebuild updates, this may take some time{chr(10) if not quiet and not ask else ''}")
+    if ask:
+        print("smart-live-rebuild does not currently support --ask\n")
+    if quiet:
+        print("smart-live-rebuild does not currently support --quiet\n")
+    rc = os.system(liveRebuildCommand)
+    if rc != 0:
+        print(f"Errors occured during smart-live-rebuild update\n")
+        exit()
